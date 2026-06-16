@@ -44,6 +44,8 @@ const els = {
   menuButton: document.getElementById("menuButton"),
   menuPanel: document.getElementById("menuPanel"),
   drawPanel: document.getElementById("drawPanel"),
+  statusPanel: document.getElementById("statusPanel"),
+  panelGrabber: document.getElementById("panelGrabber"),
   drawCount: document.getElementById("drawCount"),
   undoPointButton: document.getElementById("undoPointButton"),
   finishAreaButton: document.getElementById("finishAreaButton"),
@@ -286,6 +288,7 @@ function bindUi() {
   els.clearAreaButton.addEventListener("click", requestClearArea);
   els.drawButton.addEventListener("click", startDrawing);
   els.menuButton.addEventListener("click", toggleMenu);
+  els.panelGrabber.addEventListener("click", toggleStatusPanel);
   els.undoPointButton.addEventListener("click", undoDraftPoint);
   els.finishAreaButton.addEventListener("click", finishDrawing);
   els.cancelDrawButton.addEventListener("click", cancelDrawing);
@@ -317,6 +320,10 @@ function bindUi() {
 
 function toggleMenu() {
   els.menuPanel.classList.toggle("hidden");
+}
+
+function toggleStatusPanel() {
+  els.statusPanel.classList.toggle("collapsed");
 }
 
 function bindUiEventGuards() {

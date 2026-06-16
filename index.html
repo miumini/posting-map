@@ -34,11 +34,11 @@
         <div class="tool-row">
           <button id="locateButton" class="icon-button" type="button" aria-label="現在地">⌖</button>
           <button id="clearAreaButton" class="text-button area-clear-button" type="button">範囲解除</button>
-          <button id="drawButton" class="text-button" type="button">手動範囲作成</button>
           <span id="areaTotal" class="area-total">範囲内 0枚</span>
           <button id="menuButton" class="icon-button" type="button" aria-label="メニュー">☰</button>
         </div>
         <div id="menuPanel" class="menu-panel hidden" aria-label="メニュー">
+          <button id="drawButton" type="button">手動範囲作成</button>
           <button id="exportButton" type="button">書出</button>
           <label class="menu-file-button">
             読込
@@ -57,7 +57,7 @@
       </section>
 
       <section id="statusPanel" class="status-panel" aria-label="建物ステータス">
-        <div class="grabber"></div>
+        <button id="panelGrabber" class="grabber" type="button" aria-label="パネル開閉"></button>
         <span id="selectedLabel" class="sr-only"></span>
         <div class="record-row">
           <label class="count-field" aria-label="配布枚数">
@@ -159,6 +159,6 @@
 
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="https://unpkg.com/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
-    <script src="app.js?v=25"></script>
+    <script src="app.js?v=26"></script>
   </body>
 </html>
