@@ -84,16 +84,15 @@ button:active,
 .attribution {
   position: fixed;
   right: 8px;
-  bottom: calc(184px + env(safe-area-inset-bottom));
-  z-index: 9;
-  max-width: calc(100vw - 16px);
-  padding: 4px 6px;
+  bottom: calc(var(--status-panel-height, 34px) + 6px);
+  z-index: 11;
+  padding: 3px 7px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.76);
   color: #3d443f;
-  font-size: 10px;
-  line-height: 1.35;
-  text-align: right;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .attribution a {
@@ -379,7 +378,7 @@ button:active,
 
 .record-row {
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr) 92px;
   gap: 7px;
   margin-top: 4px;
 }
@@ -516,6 +515,13 @@ h2 {
 
 .memo-status-button.has-memo .memo-preview {
   color: #2457a7;
+}
+
+.record-delete-button {
+  min-height: 42px;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 1.2;
 }
 
 .status-done {

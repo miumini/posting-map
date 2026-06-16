@@ -1,6 +1,7 @@
 const DB_NAME = "posting-map-db";
 const DB_VERSION = 1;
 const STORE = "state";
+const APP_VERSION = "v40";
 const STATUS_LABELS = {
   done: "配布済",
   nonresidential: "非住居",
@@ -67,6 +68,7 @@ const els = {
   backupInput: document.getElementById("backupInput"),
   deleteAreaRecordsButton: document.getElementById("deleteAreaRecordsButton"),
   initializeButton: document.getElementById("initializeButton"),
+  versionCheckButton: document.getElementById("versionCheckButton"),
   confirmDeleteAreaRecordsDialog: document.getElementById("confirmDeleteAreaRecordsDialog"),
   confirmDeleteAreaRecordsButton: document.getElementById("confirmDeleteAreaRecordsButton"),
   confirmInitializeDialog: document.getElementById("confirmInitializeDialog"),
@@ -296,16 +298,17 @@ function bindUi() {
   els.memoButton.addEventListener("click", openMemo);
   els.saveMemoButton.addEventListener("click", saveMemo);
   els.deleteBuildingButton.addEventListener("click", requestDeleteSelectedBuilding);
-  els.deleteRecordButton.addEventListener("click", requestDeleteSelectedBuilding);
+  if (els.deleteRecordButton) els.deleteRecordButton.addEventListener("click", requestDeleteSelectedBuilding);
   els.confirmDeleteButton.addEventListener("click", deleteSelectedBuilding);
   els.confirmClearAreaButton.addEventListener("click", clearArea);
   els.exportButton.addEventListener("click", exportBackup);
   els.backupInput.addEventListener("change", importBackup);
   els.deleteAreaRecordsButton.addEventListener("click", requestDeleteAreaRecords);
   els.initializeButton.addEventListener("click", requestInitializeApp);
+  els.versionCheckButton.addEventListener("click", checkForUpdate);
   els.confirmDeleteAreaRecordsButton.addEventListener("click", deleteAreaRecords);
   els.confirmInitializeButton.addEventListener("click", initializeApp);
-  els.clearSelectionButton.addEventListener("click", clearSelection);
+  if (els.clearSelectionButton) els.clearSelectionButton.addEventListener("click", clearSelection);
 
   document.querySelectorAll(".status-button").forEach((button) => {
     button.addEventListener("click", () => setSelectedStatus(button.dataset.status));
@@ -319,6 +322,7 @@ function bindUi() {
 }
 
 function toggleMenu() {
+  if (selectedBuildingId || selectedBuilding) clearSelection();
   els.menuPanel.classList.toggle("hidden");
 }
 
@@ -365,6 +369,7 @@ function collapseStatusPanel() {
 function setStatusPanelHeight(height) {
   const clamped = Math.max(statusPanelMinHeight(), Math.min(statusPanelMaxHeight(), height));
   els.statusPanel.style.setProperty("--panel-height", `${clamped}px`);
+  document.documentElement.style.setProperty("--status-panel-height", `${clamped}px`);
   els.statusPanel.classList.add("drag-sized");
 }
 
@@ -403,7 +408,7 @@ function markUiInteraction(event) {
 }
 
 function recentlyTouchedUi() {
-  return Date.now() - lastUiInteractionAt < 180;
+  return Date.now() - lastUiInteractionAt < 70;
 }
 
 function wireMapGestures() {
@@ -1027,6 +1032,39 @@ function initializeApp() {
   showToast("選択した項目を削除しました");
 }
 
+async function checkForUpdate() {
+  els.menuPanel.classList.add("hidden");
+  showToast("バージョンを確認しています");
+  try {
+    const response = await fetch(`version.json?ts=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("version check failed");
+    const info = await response.json();
+    const latest = String(info.version || "");
+    if (!latest) throw new Error("version missing");
+    if (latest === APP_VERSION) {
+      showToast(`最新版です（${APP_VERSION}）`);
+      return;
+    }
+    if (confirm(`新しいバージョン ${latest} があります。更新しますか？\n現在のバージョン: ${APP_VERSION}\n保存済みの記録は通常そのまま残ります。`)) {
+      await refreshAppCaches();
+      window.location.reload();
+    }
+  } catch {
+    showToast("バージョン確認に失敗しました");
+  }
+}
+
+async function refreshAppCaches() {
+  if ("serviceWorker" in navigator) {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (registration) await registration.update();
+  }
+  if ("caches" in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => key.startsWith("posting-map-")).map((key) => caches.delete(key)));
+  }
+}
+
 function areaRecordIds() {
   if (!activeArea) return [];
   return Object.values(records)
@@ -1257,7 +1295,7 @@ function refreshSelectionLabel() {
 
 function updateSavedCount() {
   const count = Object.keys(records).length;
-  els.savedCount.textContent = `保存 ${count}件`;
+  if (els.savedCount) els.savedCount.textContent = `保存 ${count}件`;
   updateAreaTotal();
 }
 
