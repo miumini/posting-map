@@ -6,10 +6,10 @@
   --line: rgba(32, 33, 36, 0.14);
   --panel: rgba(255, 255, 255, 0.94);
   --accent: #2457a7;
-  --unvisited: #868e96;
   --done: #16835b;
-  --nonresidential: #2274a5;
+  --nonresidential: #4b5563;
   --banned: #c24132;
+  --safe-area-bottom: env(safe-area-inset-bottom);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -210,8 +210,9 @@ button:active,
 .menu-panel {
   justify-self: end;
   display: grid;
-  grid-template-columns: 92px 92px;
+  grid-template-columns: minmax(180px, 1fr);
   gap: 6px;
+  width: min(240px, calc(100vw - 24px));
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -241,7 +242,8 @@ button:active,
 }
 
 .menu-panel button,
-.menu-file-button {
+.menu-file-button,
+.menu-link-button {
   display: grid;
   place-items: center;
   min-height: 40px;
@@ -251,6 +253,7 @@ button:active,
   color: var(--ink);
   font-size: 13px;
   font-weight: 800;
+  text-decoration: none;
 }
 
 .menu-file-button input {
@@ -261,11 +264,45 @@ button:active,
   color: var(--banned);
 }
 
+.menu-support {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.menu-support-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.menu-support .support-button {
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #2457a7;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .icon-button {
   width: 44px;
   min-height: 42px;
   padding: 0;
   font-size: 22px;
+}
+
+.icon-button.active {
+  border-color: #2457a7;
+  background: #2457a7;
+  color: #fff;
 }
 
 .text-button,
@@ -319,11 +356,21 @@ button:active,
   right: 0;
   bottom: 0;
   z-index: 10;
+  max-height: min(58vh, 320px);
+  overflow: hidden;
   padding: 8px 12px calc(12px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
   border-radius: 14px 14px 0 0;
   background: var(--panel);
-  transition: transform 180ms ease;
+  transition: height 160ms ease;
+}
+
+.status-panel.drag-sized {
+  height: var(--panel-height);
+}
+
+.status-panel.resizing {
+  transition: none;
 }
 
 .status-panel.collapsed {
@@ -373,6 +420,8 @@ button:active,
   border: 0;
   border-radius: 999px;
   background: rgba(32, 33, 36, 0.22);
+  cursor: ns-resize;
+  touch-action: none;
 }
 
 .status-panel.collapsed .grabber {
@@ -409,7 +458,7 @@ h2 {
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   justify-content: stretch;
   gap: 7px;
   margin-top: 7px;
@@ -467,10 +516,6 @@ h2 {
 
 .memo-status-button.has-memo .memo-preview {
   color: #2457a7;
-}
-
-.status-unvisited {
-  background: var(--unvisited);
 }
 
 .status-done {
@@ -629,7 +674,8 @@ textarea {
   }
 
   .menu-panel {
-    grid-template-columns: 86px 86px;
+    grid-template-columns: minmax(170px, 1fr);
+    width: min(220px, calc(100vw - 24px));
   }
 
   .status-button {

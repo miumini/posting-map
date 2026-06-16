@@ -11,7 +11,7 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icon.svg" />
     <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=23" />
+    <link rel="stylesheet" href="styles.css?v=33" />
   </head>
   <body>
     <main id="app">
@@ -34,18 +34,25 @@
         <div class="tool-row">
           <button id="locateButton" class="icon-button" type="button" aria-label="現在地">⌖</button>
           <button id="clearAreaButton" class="text-button area-clear-button" type="button">範囲解除</button>
-          <span id="areaTotal" class="area-total">範囲内 0枚</span>
+          <span id="areaTotal" class="area-total">範囲内配布済枚数 0枚</span>
           <button id="menuButton" class="icon-button" type="button" aria-label="メニュー">☰</button>
         </div>
         <div id="menuPanel" class="menu-panel hidden" aria-label="メニュー">
           <button id="drawButton" type="button">手動範囲作成</button>
-          <button id="exportButton" type="button">書出</button>
+          <button id="exportButton" type="button">データ書出</button>
           <label class="menu-file-button">
-            読込
+            データ読込
             <input id="backupInput" type="file" accept=".json,application/json" />
           </label>
           <button id="deleteAreaRecordsButton" class="menu-danger-button" type="button">範囲内削除</button>
           <button id="initializeButton" class="menu-danger-button" type="button">初期化</button>
+          <a class="menu-link-button" href="about.html">PostingMapについて</a>
+          <div class="menu-support" aria-label="開発者を支援する">
+            <div class="menu-support-title">開発者を支援する</div>
+            <a class="support-button" href="https://buy.stripe.com/5kQ6oH4zc4Ad0FqeApd7q01" target="_blank" rel="noreferrer">300円支援</a>
+            <a class="support-button" href="https://buy.stripe.com/3cI28r1n02s573O8c1d7q02" target="_blank" rel="noreferrer">500円支援</a>
+            <a class="support-button" href="https://buy.stripe.com/5kQ7sL8Ps3w9dscak9d7q03" target="_blank" rel="noreferrer">1000円支援</a>
+          </div>
         </div>
       </section>
 
@@ -70,7 +77,6 @@
           </button>
         </div>
         <div class="status-grid">
-          <button class="status-button status-unvisited" data-status="unvisited" type="button">未配布</button>
           <button class="status-button status-done" data-status="done" type="button">配布済</button>
           <button class="status-button status-nonresidential" data-status="nonresidential" type="button">非住居</button>
           <button class="status-button status-banned" data-status="banned" type="button">配布禁止</button>
@@ -124,9 +130,9 @@
           <p class="dialog-copy">選択範囲内の建物記録から、選んだ項目を本当に消しますか？</p>
           <p id="deleteAreaRecordsSummary" class="dialog-note">対象 0件</p>
           <fieldset class="delete-options" data-scope="area">
-            <label><input type="checkbox" data-delete-field="status" checked /> 配布Status</label>
-            <label><input type="checkbox" data-delete-field="memo" checked /> メモ</label>
-            <label><input type="checkbox" data-delete-field="deliveryCount" checked /> 枚数</label>
+            <label><input type="checkbox" data-delete-field="status" /> ステータス</label>
+            <label><input type="checkbox" data-delete-field="memo" /> メモ</label>
+            <label><input type="checkbox" data-delete-field="deliveryCount" /> 枚数</label>
           </fieldset>
           <div class="dialog-actions confirm-actions">
             <span></span>
@@ -141,10 +147,10 @@
           <h2>初期化</h2>
           <p class="dialog-copy">選んだ項目を本当に消しますか？</p>
           <fieldset class="delete-options" data-scope="all">
-            <label><input type="checkbox" data-delete-field="status" checked /> 配布Status</label>
-            <label><input type="checkbox" data-delete-field="memo" checked /> メモ</label>
-            <label><input type="checkbox" data-delete-field="deliveryCount" checked /> 枚数</label>
-            <label><input type="checkbox" data-delete-field="area" checked /> 選択範囲</label>
+            <label><input type="checkbox" data-delete-field="status" /> ステータス</label>
+            <label><input type="checkbox" data-delete-field="memo" /> メモ</label>
+            <label><input type="checkbox" data-delete-field="deliveryCount" /> 枚数</label>
+            <label><input type="checkbox" data-delete-field="area" /> 選択範囲</label>
           </fieldset>
           <div class="dialog-actions confirm-actions">
             <span></span>
@@ -159,6 +165,6 @@
 
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="https://unpkg.com/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
-    <script src="app.js?v=26"></script>
+    <script src="app.js?v=33"></script>
   </body>
 </html>

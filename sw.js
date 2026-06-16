@@ -1,7 +1,8 @@
-const CACHE_NAME = "posting-map-v26";
+const CACHE_NAME = "posting-map-v33";
 const APP_FILES = [
   "./",
   "./index.html",
+  "./about.html",
   "./styles.css",
   "./app.js",
   "./manifest.webmanifest",

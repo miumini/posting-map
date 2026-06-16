@@ -2,15 +2,13 @@ const DB_NAME = "posting-map-db";
 const DB_VERSION = 1;
 const STORE = "state";
 const STATUS_LABELS = {
-  unvisited: "未配布",
   done: "配布済",
   nonresidential: "非住居",
   banned: "配布禁止",
 };
 const STATUS_COLORS = {
-  unvisited: "#868e96",
   done: "#16835b",
-  nonresidential: "#2274a5",
+  nonresidential: "#4b5563",
   banned: "#c24132",
 };
 const WORLD_WITH_JAPAN_FOCUS = [139.767, 35.681];
@@ -32,6 +30,7 @@ let locationWatchId = null;
 let silentLocationFailure = false;
 let centerOnNextLocation = false;
 let lastUiInteractionAt = 0;
+let panelDrag = null;
 
 const els = {
   addressInput: document.getElementById("addressInput"),
@@ -84,8 +83,10 @@ async function init() {
   const saved = await loadState();
   records = saved.records || {};
   activeArea = saved.activeArea || null;
+  if (normalizeRemovedStatuses()) persist();
   setupMap();
   bindUi();
+  collapseStatusPanel();
   refreshSelectionLabel();
   registerServiceWorker();
 }
@@ -153,7 +154,6 @@ function setupMap() {
     updateAreaLayers();
     updateSavedCount();
     wireMapGestures();
-    startLocationWatch(false);
     showToast("建物をタップすると状態を変更できます");
   });
 
@@ -288,7 +288,7 @@ function bindUi() {
   els.clearAreaButton.addEventListener("click", requestClearArea);
   els.drawButton.addEventListener("click", startDrawing);
   els.menuButton.addEventListener("click", toggleMenu);
-  els.panelGrabber.addEventListener("click", toggleStatusPanel);
+  els.panelGrabber.addEventListener("pointerdown", startPanelResize);
   els.undoPointButton.addEventListener("click", undoDraftPoint);
   els.finishAreaButton.addEventListener("click", finishDrawing);
   els.cancelDrawButton.addEventListener("click", cancelDrawing);
@@ -322,8 +322,64 @@ function toggleMenu() {
   els.menuPanel.classList.toggle("hidden");
 }
 
-function toggleStatusPanel() {
-  els.statusPanel.classList.toggle("collapsed");
+function startPanelResize(event) {
+  markUiInteraction(event);
+  event.preventDefault();
+  panelDrag = { pointerId: event.pointerId };
+  els.statusPanel.classList.add("resizing");
+  if (els.panelGrabber.setPointerCapture) els.panelGrabber.setPointerCapture(event.pointerId);
+  resizeStatusPanel(event);
+  window.addEventListener("pointermove", resizeStatusPanel);
+  window.addEventListener("pointerup", stopPanelResize, { once: true });
+  window.addEventListener("pointercancel", stopPanelResize, { once: true });
+}
+
+function resizeStatusPanel(event) {
+  if (!panelDrag) return;
+  setStatusPanelHeight(window.innerHeight - event.clientY);
+}
+
+function stopPanelResize(event) {
+  if (panelDrag && els.panelGrabber.releasePointerCapture) {
+    try {
+      els.panelGrabber.releasePointerCapture(panelDrag.pointerId);
+    } catch {
+      // Pointer capture may already be released by the browser.
+    }
+  }
+  panelDrag = null;
+  els.statusPanel.classList.remove("resizing");
+  window.removeEventListener("pointermove", resizeStatusPanel);
+  window.removeEventListener("pointerup", stopPanelResize);
+  window.removeEventListener("pointercancel", stopPanelResize);
+}
+
+function expandStatusPanel() {
+  setStatusPanelHeight(Math.max(170, els.statusPanel.scrollHeight));
+}
+
+function collapseStatusPanel() {
+  setStatusPanelHeight(statusPanelMinHeight());
+}
+
+function setStatusPanelHeight(height) {
+  const clamped = Math.max(statusPanelMinHeight(), Math.min(statusPanelMaxHeight(), height));
+  els.statusPanel.style.setProperty("--panel-height", `${clamped}px`);
+  els.statusPanel.classList.add("drag-sized");
+}
+
+function statusPanelMaxHeight() {
+  return Math.min(window.innerHeight * 0.58, 320);
+}
+
+function statusPanelMinHeight() {
+  return 28 + safeAreaBottom();
+}
+
+function safeAreaBottom() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--safe-area-bottom");
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function bindUiEventGuards() {
@@ -347,7 +403,7 @@ function markUiInteraction(event) {
 }
 
 function recentlyTouchedUi() {
-  return Date.now() - lastUiInteractionAt < 700;
+  return Date.now() - lastUiInteractionAt < 180;
 }
 
 function wireMapGestures() {
@@ -669,6 +725,10 @@ async function fetchJson(url) {
 }
 
 function locateUser() {
+  if (locationWatchId !== null || currentLocationMarker) {
+    stopLocationWatch();
+    return;
+  }
   centerOnNextLocation = true;
   startLocationWatch(true);
 }
@@ -690,14 +750,23 @@ function startLocationWatch(showErrors) {
     updateCurrentLocation,
     () => {
       locationWatchId = null;
+      centerOnNextLocation = false;
+      if (currentLocationMarker) {
+        currentLocationMarker.remove();
+        currentLocationMarker = null;
+      }
+      setLocationButtonActive(false);
       if (showErrors || !silentLocationFailure) showToast("現在地表示には位置情報を許可してください");
       silentLocationFailure = true;
     },
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
   );
+  setLocationButtonActive(true);
 }
 
 function updateCurrentLocation(position) {
+  setLocationButtonActive(true);
+  silentLocationFailure = false;
   const lngLat = [position.coords.longitude, position.coords.latitude];
   if (!currentLocationMarker) {
     const el = document.createElement("div");
@@ -716,11 +785,32 @@ function updateCurrentLocation(position) {
   }
 }
 
+function stopLocationWatch() {
+  if (locationWatchId !== null) navigator.geolocation.clearWatch(locationWatchId);
+  locationWatchId = null;
+  centerOnNextLocation = false;
+  if (currentLocationMarker) {
+    currentLocationMarker.remove();
+    currentLocationMarker = null;
+  }
+  setLocationButtonActive(false);
+  showToast("現在地表示をOFFにしました");
+}
+
+function setLocationButtonActive(active) {
+  els.locateButton.classList.toggle("active", active);
+  els.locateButton.setAttribute("aria-pressed", String(active));
+}
+
 function selectBuildingAt(point, fromLongPress = false) {
   const features = map.queryRenderedFeatures(point, { layers: ["building-base", "status-building-fill"] });
   const feature = features.find((item) => item.geometry && ["Polygon", "MultiPolygon"].includes(item.geometry.type));
   if (!feature) {
-    if (!fromLongPress) showToast("建物が見つかりません。ズームして建物をタップしてください");
+    if (selectedBuildingId || selectedBuilding) {
+      clearSelection();
+    } else if (!fromLongPress) {
+      showToast("建物が見つかりません。ズームして建物をタップしてください");
+    }
     return false;
   }
 
@@ -730,6 +820,7 @@ function selectBuildingAt(point, fromLongPress = false) {
   selectedBuilding = { id, geometry };
   refreshSelectionLabel();
   updateSelectedBuildingLayer();
+  expandStatusPanel();
   return true;
 }
 
@@ -826,11 +917,8 @@ function requestDeleteSelectedBuilding() {
 function deleteSelectedBuilding() {
   if (!selectedBuildingId) return;
   delete records[selectedBuildingId];
-  selectedBuildingId = null;
-  selectedBuilding = null;
   updateStatusLayer();
-  updateSelectedBuildingLayer();
-  refreshSelectionLabel();
+  clearSelection();
   persist();
   if (els.memoDialog.open) els.memoDialog.close();
   if (els.confirmDeleteDialog.open) els.confirmDeleteDialog.close();
@@ -859,6 +947,7 @@ function clearArea() {
 
 function requestDeleteAreaRecords() {
   els.menuPanel.classList.add("hidden");
+  resetDeleteFields("area");
   if (!activeArea) {
     showToast("先に範囲を指定してください");
     return;
@@ -890,11 +979,10 @@ function deleteAreaRecords() {
     showToast("選択範囲内に削除する記録はありません");
     return;
   }
-  ids.forEach((id) => clearRecordFields(records[id], fields));
+  ids.forEach((id) => clearRecordFields(records[id], fields, { preserveProtectedStatus: true }));
   pruneEmptyRecords();
   if (selectedBuildingId && !records[selectedBuildingId]) {
-    selectedBuildingId = null;
-    selectedBuilding = null;
+    clearSelection();
   }
   updateStatusLayer();
   updateSelectedBuildingLayer();
@@ -906,6 +994,7 @@ function deleteAreaRecords() {
 
 function requestInitializeApp() {
   els.menuPanel.classList.add("hidden");
+  resetDeleteFields("all");
   if (Object.keys(records).length === 0 && !activeArea) {
     showToast("初期化するデータはありません");
     return;
@@ -927,8 +1016,7 @@ function initializeApp() {
   pruneEmptyRecords();
   if (fields.includes("area")) activeArea = null;
   if (selectedBuildingId && !records[selectedBuildingId]) {
-    selectedBuildingId = null;
-    selectedBuilding = null;
+    clearSelection();
   }
   updateStatusLayer();
   updateSelectedBuildingLayer();
@@ -951,12 +1039,32 @@ function selectedDeleteFields(scope) {
     .map((input) => input.dataset.deleteField);
 }
 
-function clearRecordFields(record, fields) {
+function resetDeleteFields(scope) {
+  document.querySelectorAll(`.delete-options[data-scope="${scope}"] input`).forEach((input) => {
+    input.checked = false;
+  });
+}
+
+function clearRecordFields(record, fields, options = {}) {
   if (!record) return;
-  if (fields.includes("status")) record.status = "";
+  const protectedStatus = record.status === "banned" || record.status === "nonresidential";
+  if (fields.includes("status") && !(options.preserveProtectedStatus && protectedStatus)) record.status = "";
   if (fields.includes("memo")) record.memo = "";
   if (fields.includes("deliveryCount")) record.deliveryCount = "";
   record.updatedAt = new Date().toISOString();
+}
+
+function normalizeRemovedStatuses() {
+  let changed = false;
+  Object.values(records).forEach((record) => {
+    if (record?.status === "unvisited") {
+      record.status = "";
+      record.updatedAt = new Date().toISOString();
+      changed = true;
+    }
+  });
+  if (changed) pruneEmptyRecords();
+  return changed;
 }
 
 function pruneEmptyRecords() {
@@ -1083,12 +1191,12 @@ function updateDraftArea() {
 
 function updateStatusLayer() {
   if (!map || !map.getSource("status-buildings")) return;
-  const features = Object.values(records).filter((record) => record.status).map((record) => ({
+  const features = Object.values(records).filter((record) => record.status && STATUS_COLORS[record.status]).map((record) => ({
     type: "Feature",
     properties: {
       id: record.id,
       status: record.status,
-      color: STATUS_COLORS[record.status] || STATUS_COLORS.unvisited,
+      color: STATUS_COLORS[record.status],
       memo: record.memo || "",
       deliveryCount: record.deliveryCount || "",
     },
@@ -1134,6 +1242,7 @@ function clearSelection() {
   selectedBuilding = null;
   refreshSelectionLabel();
   updateSelectedBuildingLayer();
+  collapseStatusPanel();
 }
 
 function refreshSelectionLabel() {
@@ -1159,7 +1268,7 @@ function updateAreaTotal() {
     if (!Number.isFinite(count) || count <= 0) return sum;
     return geometryIntersectsArea(record.geometry, activeArea) ? sum + count : sum;
   }, 0) : 0;
-  els.areaTotal.textContent = `範囲内 ${total}枚`;
+  els.areaTotal.textContent = `範囲内配布済枚数 ${total}枚`;
 }
 
 async function exportBackup() {
@@ -1197,8 +1306,7 @@ async function importBackup(event) {
     if (!json.records || typeof json.records !== "object") throw new Error("invalid");
     records = json.records;
     activeArea = json.activeArea || activeArea;
-    selectedBuildingId = null;
-    selectedBuilding = null;
+    clearSelection();
     updateStatusLayer();
     updateSelectedBuildingLayer();
     updateAreaLayers();
