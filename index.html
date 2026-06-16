@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f5ef" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="配布地図" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>配布地図</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon.svg" />
+    <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <div id="map" aria-label="配布地図"></div>
+      <aside class="attribution" aria-label="出典">
+        <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer">地理院タイル</a>
+        /
+        <a href="https://github.com/gsi-cyberjapan/optimal_bvmap" target="_blank" rel="noreferrer">国土地理院最適化ベクトルタイル</a>
+        を使用
+      </aside>
+
+      <section class="top-panel" aria-label="検索と地図操作">
+        <form id="searchForm" class="search-bar">
+          <input id="addressInput" autocomplete="street-address" inputmode="search" placeholder="市区町村・町丁目で検索" />
+          <button type="submit" aria-label="検索">⌕</button>
+        </form>
+        <div class="tool-row">
+          <button id="locateButton" class="icon-button" type="button" aria-label="現在地">⌖</button>
+          <button id="drawButton" class="text-button" type="button">範囲作成</button>
+          <button id="viewAreaButton" class="text-button" type="button">画面を範囲</button>
+          <label class="text-button file-button">
+            境界読込
+            <input id="geojsonInput" type="file" accept=".geojson,.json,application/geo+json,application/json" />
+          </label>
+        </div>
+      </section>
+
+      <section id="drawPanel" class="draw-panel hidden" aria-label="範囲作成">
+        <span id="drawCount">0点</span>
+        <button id="undoPointButton" type="button">戻す</button>
+        <button id="finishAreaButton" type="button">確定</button>
+        <button id="cancelDrawButton" type="button">中止</button>
+      </section>
+
+      <section id="statusPanel" class="status-panel" aria-label="建物ステータス">
+        <div class="grabber"></div>
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">選択中の建物</p>
+            <h1 id="selectedLabel">建物をタップ</h1>
+          </div>
+          <button id="memoButton" class="icon-button" type="button" aria-label="メモ">✎</button>
+        </div>
+        <div class="status-grid">
+          <button class="status-button status-unvisited" data-status="unvisited" type="button">未配布</button>
+          <button class="status-button status-done" data-status="done" type="button">配布済み</button>
+          <button class="status-button status-nonresidential" data-status="nonresidential" type="button">非住居</button>
+          <button class="status-button status-banned" data-status="banned" type="button">配布禁止</button>
+        </div>
+        <div class="meta-row">
+          <span id="savedCount">保存 0件</span>
+          <button id="exportButton" type="button">書出</button>
+          <label class="import-button">
+            読込
+            <input id="backupInput" type="file" accept=".json,application/json" />
+          </label>
+          <button id="clearSelectionButton" type="button">解除</button>
+        </div>
+      </section>
+
+      <dialog id="memoDialog">
+        <form method="dialog" class="memo-card">
+          <h2>メモ</h2>
+          <textarea id="memoText" rows="7" placeholder="ポスト位置、注意事項、表札名など"></textarea>
+          <div class="dialog-actions">
+            <button id="deleteBuildingButton" class="danger-button" value="delete" type="button">削除</button>
+            <button value="cancel">閉じる</button>
+            <button id="saveMemoButton" class="primary-button" value="save" type="button">保存</button>
+          </div>
+        </form>
+      </dialog>
+
+      <div id="toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
