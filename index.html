@@ -11,13 +11,13 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icon.svg" />
     <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=40" />
+    <link rel="stylesheet" href="styles.css?v=41" />
   </head>
   <body>
     <main id="app">
       <div id="map" aria-label="配布地図"></div>
       <aside class="attribution" aria-label="出典">
-        <a href="about.html?v=40#references">出典</a>
+        <a href="about.html?v=41#references">出典</a>
       </aside>
 
       <section class="top-panel" aria-label="検索と地図操作">
@@ -27,7 +27,10 @@
         </form>
         <div id="suggestionPanel" class="suggestion-panel hidden" aria-label="住所候補"></div>
         <div class="tool-row">
-          <button id="locateButton" class="icon-button" type="button" aria-label="現在地">⌖</button>
+          <button id="locateButton" class="icon-button locate-button" type="button" aria-label="現在地">
+            <span class="locate-icon" aria-hidden="true">⌖</span>
+            <span>現在地</span>
+          </button>
           <button id="clearAreaButton" class="text-button area-clear-button" type="button">範囲解除</button>
           <span id="areaTotal" class="area-total">範囲内配布済枚数 0枚</span>
           <button id="menuButton" class="icon-button" type="button" aria-label="メニュー">☰</button>
@@ -41,7 +44,7 @@
           </label>
           <button id="deleteAreaRecordsButton" class="menu-danger-button" type="button">範囲内削除</button>
           <button id="initializeButton" class="menu-danger-button" type="button">初期化</button>
-          <a class="menu-link-button" href="about.html?v=40">PostingMapについて</a>
+          <a class="menu-link-button" href="about.html?v=41">PostingMapについて</a>
           <button id="versionCheckButton" type="button">バージョン確認</button>
           <div class="menu-support" aria-label="開発者を支援する">
             <div class="menu-support-title">開発者を支援する</div>
@@ -157,6 +160,6 @@
 
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="https://unpkg.com/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
-    <script src="app.js?v=40"></script>
+    <script src="app.js?v=41"></script>
   </body>
 </html>

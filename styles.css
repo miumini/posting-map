@@ -195,7 +195,7 @@ button:active,
 
 .tool-row {
   display: grid;
-  grid-template-columns: 48px 72px minmax(0, 1fr) 48px;
+  grid-template-columns: 92px 72px minmax(0, 1fr) 48px;
   gap: 6px;
   padding: 6px;
   border: 1px solid var(--line);
@@ -296,6 +296,22 @@ button:active,
   min-height: 42px;
   padding: 0;
   font-size: 22px;
+}
+
+.locate-button {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.locate-icon {
+  font-size: 20px;
+  line-height: 1;
 }
 
 .icon-button.active {
@@ -676,7 +692,11 @@ textarea {
 
 @media (max-width: 370px) {
   .tool-row {
-    grid-template-columns: 44px 66px 1fr 44px;
+    grid-template-columns: 82px 66px minmax(0, 1fr) 44px;
+  }
+
+  .locate-button {
+    padding: 0 7px;
   }
 
   .menu-panel {

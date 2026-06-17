@@ -1,4 +1,4 @@
-const CACHE_NAME = "posting-map-v40";
+const CACHE_NAME = "posting-map-v41";
 const APP_FILES = [
   "./",
   "./index.html",
