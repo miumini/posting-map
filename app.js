@@ -1,7 +1,7 @@
 const DB_NAME = "posting-map-db";
 const DB_VERSION = 1;
 const STORE = "state";
-const APP_VERSION = "v41";
+const APP_VERSION = "v42";
 const STATUS_LABELS = {
   done: "配布済",
   nonresidential: "非住居",
