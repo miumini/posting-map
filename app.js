@@ -1,7 +1,8 @@
 const DB_NAME = "posting-map-db";
 const DB_VERSION = 1;
 const STORE = "state";
-const APP_VERSION = "v45";
+const APP_VERSION = "v46";
+const CUSTOM_DELIVERY_COUNT_VALUE = "__custom";
 const STATUS_LABELS = {
   done: "配布済",
   nonresidential: "非住居",
@@ -52,6 +53,7 @@ const els = {
   cancelDrawButton: document.getElementById("cancelDrawButton"),
   selectedLabel: document.getElementById("selectedLabel"),
   deliveryCountInput: document.getElementById("deliveryCountInput"),
+  deliveryCountCustomInput: document.getElementById("deliveryCountCustomInput"),
   memoButton: document.getElementById("memoButton"),
   memoPreview: document.getElementById("memoPreview"),
   memoDialog: document.getElementById("memoDialog"),
@@ -296,6 +298,8 @@ function bindUi() {
   els.finishAreaButton.addEventListener("click", finishDrawing);
   els.cancelDrawButton.addEventListener("click", cancelDrawing);
   els.deliveryCountInput.addEventListener("change", saveDeliveryCount);
+  els.deliveryCountCustomInput.addEventListener("input", saveCustomDeliveryCount);
+  els.deliveryCountCustomInput.addEventListener("blur", closeCustomDeliveryCountInput);
   els.memoButton.addEventListener("click", openMemo);
   els.saveMemoButton.addEventListener("click", saveMemo);
   els.deleteBuildingButton.addEventListener("click", requestDeleteSelectedBuilding);
@@ -886,6 +890,7 @@ function populateDeliveryCountOptions() {
   for (let count = 1; count <= 50; count += 1) {
     ensureDeliveryCountOption(String(count));
   }
+  ensureCustomDeliveryCountOption();
 }
 
 function ensureDeliveryCountOption(value) {
@@ -897,6 +902,15 @@ function ensureDeliveryCountOption(value) {
   const option = document.createElement("option");
   option.value = normalized;
   option.textContent = normalized;
+  const customOption = els.deliveryCountInput.querySelector(`option[value="${CUSTOM_DELIVERY_COUNT_VALUE}"]`);
+  els.deliveryCountInput.insertBefore(option, customOption);
+}
+
+function ensureCustomDeliveryCountOption() {
+  if (!els.deliveryCountInput || els.deliveryCountInput.querySelector(`option[value="${CUSTOM_DELIVERY_COUNT_VALUE}"]`)) return;
+  const option = document.createElement("option");
+  option.value = CUSTOM_DELIVERY_COUNT_VALUE;
+  option.textContent = "その他";
   els.deliveryCountInput.appendChild(option);
 }
 
@@ -911,6 +925,10 @@ function saveDeliveryCount() {
     showToast("先に建物を選択してください");
     return;
   }
+  if (els.deliveryCountInput.value === CUSTOM_DELIVERY_COUNT_VALUE) {
+    openCustomDeliveryCountInput();
+    return;
+  }
   const value = els.deliveryCountInput.value.trim();
   if (value === "" && !selectedRecord()) return;
   const record = ensureSelectedRecord();
@@ -922,6 +940,41 @@ function saveDeliveryCount() {
   refreshSelectionLabel();
   updateStatusLayer();
   persist();
+}
+
+function openCustomDeliveryCountInput() {
+  const record = selectedRecord();
+  els.deliveryCountCustomInput.value = record?.deliveryCount || "";
+  els.deliveryCountInput.classList.add("hidden");
+  els.deliveryCountCustomInput.classList.remove("hidden");
+  els.deliveryCountCustomInput.disabled = false;
+  els.deliveryCountCustomInput.focus();
+  els.deliveryCountCustomInput.select();
+}
+
+function saveCustomDeliveryCount() {
+  if (!selectedBuilding) {
+    closeCustomDeliveryCountInput();
+    return;
+  }
+  const value = els.deliveryCountCustomInput.value.trim();
+  if (value === "" && !selectedRecord()) return;
+  const record = ensureSelectedRecord();
+  record.deliveryCount = value === "" ? "" : String(Math.max(0, Math.floor(Number(value) || 0)));
+  ensureDeliveryCountOption(record.deliveryCount);
+  record.updatedAt = new Date().toISOString();
+  pruneSelectedRecordIfEmpty();
+  updateStatusLayer();
+  updateAreaTotal();
+  persist();
+}
+
+function closeCustomDeliveryCountInput() {
+  els.deliveryCountCustomInput.classList.add("hidden");
+  els.deliveryCountInput.classList.remove("hidden");
+  const record = selectedRecord();
+  ensureDeliveryCountOption(record?.deliveryCount || "");
+  els.deliveryCountInput.value = record?.deliveryCount || "";
 }
 
 function openMemo() {
@@ -1349,8 +1402,11 @@ function refreshSelectionLabel() {
   const record = selectedRecord();
   els.selectedLabel.textContent = record ? STATUS_LABELS[record.status] : "";
   ensureDeliveryCountOption(record?.deliveryCount || "");
+  els.deliveryCountCustomInput.classList.add("hidden");
+  els.deliveryCountInput.classList.remove("hidden");
   els.deliveryCountInput.value = record?.deliveryCount || "";
   els.deliveryCountInput.disabled = !selectedBuilding;
+  els.deliveryCountCustomInput.disabled = !selectedBuilding;
   const memo = record?.memo || "";
   els.memoPreview.textContent = memo || "メモ";
   els.memoButton.classList.toggle("has-memo", Boolean(memo));

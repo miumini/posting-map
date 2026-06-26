@@ -430,6 +430,10 @@ button:active,
   appearance: none;
 }
 
+.count-field .hidden {
+  display: none;
+}
+
 .grabber {
   display: block;
   width: 46px;
