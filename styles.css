@@ -414,7 +414,8 @@ button:active,
   font-weight: 800;
 }
 
-.count-field input {
+.count-field input,
+.count-field select {
   min-width: 0;
   width: 100%;
   border: 0;
@@ -423,6 +424,10 @@ button:active,
   color: var(--ink);
   font-size: 16px;
   font-weight: 800;
+}
+
+.count-field select {
+  appearance: none;
 }
 
 .grabber {

@@ -1,7 +1,7 @@
 const DB_NAME = "posting-map-db";
 const DB_VERSION = 1;
 const STORE = "state";
-const APP_VERSION = "v42";
+const APP_VERSION = "v45";
 const STATUS_LABELS = {
   done: "配布済",
   nonresidential: "非住居",
@@ -285,6 +285,7 @@ function addAppLayers() {
 
 function bindUi() {
   bindUiEventGuards();
+  populateDeliveryCountOptions();
   els.searchForm.addEventListener("submit", searchAddress);
   els.locateButton.addEventListener("click", locateUser);
   els.clearAreaButton.addEventListener("click", requestClearArea);
@@ -294,7 +295,7 @@ function bindUi() {
   els.undoPointButton.addEventListener("click", undoDraftPoint);
   els.finishAreaButton.addEventListener("click", finishDrawing);
   els.cancelDrawButton.addEventListener("click", cancelDrawing);
-  els.deliveryCountInput.addEventListener("input", saveDeliveryCount);
+  els.deliveryCountInput.addEventListener("change", saveDeliveryCount);
   els.memoButton.addEventListener("click", openMemo);
   els.saveMemoButton.addEventListener("click", saveMemo);
   els.deleteBuildingButton.addEventListener("click", requestDeleteSelectedBuilding);
@@ -642,6 +643,7 @@ async function findBoundarySuggestionsByAddress(query) {
   if (!remainder) return [];
 
   const groups = new Map();
+  const baseGroups = new Map();
   townCollection.features.forEach((feature) => {
     const rawTownName = feature.properties?.S_NAME || "";
     const townName = normalizeAddressText(rawTownName);
@@ -650,9 +652,30 @@ async function findBoundarySuggestionsByAddress(query) {
     if (!matches) return;
     if (!groups.has(townName)) groups.set(townName, { rawTownName, features: [] });
     groups.get(townName).features.push(feature);
+
+    const baseTownName = townBaseName(townName);
+    if (baseTownName && baseTownName !== townName && remainder === baseTownName) {
+      if (!baseGroups.has(baseTownName)) baseGroups.set(baseTownName, { rawTownName: rawTownBaseName(rawTownName), features: [] });
+      baseGroups.get(baseTownName).features.push(feature);
+    }
   });
 
-  return Array.from(groups.entries())
+  const combinedSuggestions = Array.from(baseGroups.entries())
+    .filter(([, group]) => group.features.length > 1)
+    .sort(([, a], [, b]) => townGroupSortValue(a) - townGroupSortValue(b) || a.rawTownName.localeCompare(b.rawTownName, "ja"))
+    .map(([, group]) => {
+      const name = `${city.name}${group.rawTownName}（${group.features.length}範囲をまとめる）`;
+      return {
+        name,
+        feature: areaFeatureFromFeatures(group.features, name, {
+          source: "Geoshape town combined suggestion",
+          cityCode: city.code,
+          keyCodes: group.features.map((feature) => feature.properties?.KEY_CODE).filter(Boolean),
+        }),
+      };
+    });
+
+  const townSuggestions = Array.from(groups.entries())
     .sort(([, a], [, b]) => townGroupSortValue(a) - townGroupSortValue(b) || a.rawTownName.localeCompare(b.rawTownName, "ja"))
     .map(([, group]) => {
       const name = `${city.name}${group.rawTownName}`;
@@ -665,11 +688,21 @@ async function findBoundarySuggestionsByAddress(query) {
         }),
       };
     });
+
+  return [...combinedSuggestions, ...townSuggestions];
 }
 
 function townGroupSortValue(group) {
   const value = Number(group.features[0]?.properties?.KIHON2);
   return Number.isFinite(value) ? value : 9999;
+}
+
+function townBaseName(name) {
+  return normalizeAddressText(name).replace(/[一二三四五六七八九十百千0-9]+丁目$/, "");
+}
+
+function rawTownBaseName(name) {
+  return String(name || "").replace(/[一二三四五六七八九十百千0-9]+丁目$/, "");
 }
 
 async function findCityForQuery(normalizedQuery) {
@@ -835,13 +868,41 @@ function setSelectedStatus(status) {
     showToast("先に建物をタップしてください");
     return;
   }
-  record.status = record.status === status ? "" : status;
+  const nextStatus = record.status === status ? "" : status;
+  record.status = nextStatus;
+  if (nextStatus === "done" && isEmptyDeliveryCount(record.deliveryCount)) {
+    record.deliveryCount = "1";
+  }
   record.updatedAt = new Date().toISOString();
   pruneSelectedRecordIfEmpty();
   refreshSelectionLabel();
   updateSelectedBuildingLayer();
   updateStatusLayer();
   persist();
+}
+
+function populateDeliveryCountOptions() {
+  if (!els.deliveryCountInput) return;
+  for (let count = 1; count <= 50; count += 1) {
+    ensureDeliveryCountOption(String(count));
+  }
+}
+
+function ensureDeliveryCountOption(value) {
+  if (!els.deliveryCountInput || value === "") return;
+  const normalized = String(Math.max(0, Math.floor(Number(value) || 0)));
+  if (normalized === "0") return;
+  const exists = Array.from(els.deliveryCountInput.options).some((option) => option.value === normalized);
+  if (exists) return;
+  const option = document.createElement("option");
+  option.value = normalized;
+  option.textContent = normalized;
+  els.deliveryCountInput.appendChild(option);
+}
+
+function isEmptyDeliveryCount(value) {
+  const count = Number(value);
+  return !Number.isFinite(count) || count <= 0;
 }
 
 function saveDeliveryCount() {
@@ -854,6 +915,7 @@ function saveDeliveryCount() {
   if (value === "" && !selectedRecord()) return;
   const record = ensureSelectedRecord();
   record.deliveryCount = value === "" ? "" : String(Math.max(0, Math.floor(Number(value) || 0)));
+  ensureDeliveryCountOption(record.deliveryCount);
   if (record.deliveryCount !== value) els.deliveryCountInput.value = record.deliveryCount;
   record.updatedAt = new Date().toISOString();
   pruneSelectedRecordIfEmpty();
@@ -1286,6 +1348,7 @@ function clearSelection() {
 function refreshSelectionLabel() {
   const record = selectedRecord();
   els.selectedLabel.textContent = record ? STATUS_LABELS[record.status] : "";
+  ensureDeliveryCountOption(record?.deliveryCount || "");
   els.deliveryCountInput.value = record?.deliveryCount || "";
   els.deliveryCountInput.disabled = !selectedBuilding;
   const memo = record?.memo || "";
@@ -1306,7 +1369,7 @@ function updateAreaTotal() {
     if (!Number.isFinite(count) || count <= 0) return sum;
     return geometryIntersectsArea(record.geometry, activeArea) ? sum + count : sum;
   }, 0) : 0;
-  els.areaTotal.textContent = `範囲内配布済枚数 ${total}枚`;
+  els.areaTotal.textContent = `範囲内配布枚数 ${total}枚`;
 }
 
 async function exportBackup() {
