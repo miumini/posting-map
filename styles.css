@@ -101,12 +101,31 @@ button:active,
 }
 
 .current-location-marker {
-  width: 18px;
-  height: 18px;
-  border: 3px solid #fff;
-  border-radius: 999px;
-  background: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.28), 0 2px 8px rgba(15, 23, 42, 0.32);
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: #2563eb;
+  filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.35));
+}
+
+.current-location-marker::before {
+  content: "➤";
+  display: block;
+  font-size: 27px;
+  line-height: 1;
+  text-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
+    1px 1px 0 #fff,
+    0 0 4px #fff;
+  transform: rotate(var(--location-heading, -90deg));
+}
+
+.current-location-marker.no-heading::before {
+  content: "●";
+  font-size: 20px;
 }
 
 .top-panel {
@@ -123,6 +142,7 @@ button:active,
 .search-bar,
 .suggestion-panel,
 .tool-row,
+.location-row,
 .menu-panel,
 .draw-panel,
 .status-panel,
@@ -206,6 +226,16 @@ button:active,
   overflow: hidden;
 }
 
+.location-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
 .menu-panel {
   justify-self: end;
   display: grid;
@@ -238,6 +268,10 @@ button:active,
 
 .area-clear-button {
   color: var(--banned);
+}
+
+.add-building-button {
+  color: #b45309;
 }
 
 .menu-panel button,
@@ -309,12 +343,24 @@ button:active,
   white-space: nowrap;
 }
 
+.mode-button {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .locate-icon {
   font-size: 20px;
   line-height: 1;
 }
 
-.icon-button.active {
+.icon-button.active,
+.mode-button.active,
+.add-building-button.active {
   border-color: #2457a7;
   background: #2457a7;
   color: #fff;
@@ -549,6 +595,18 @@ h2 {
   line-height: 1.2;
 }
 
+.bottom-delete-button {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 7px;
+  justify-self: stretch;
+  font-size: 13px;
+}
+
+.bottom-delete-button.hidden {
+  display: none;
+}
+
 .status-done {
   background: var(--done);
 }
@@ -706,6 +764,11 @@ textarea {
 
   .locate-button {
     padding: 0 7px;
+  }
+
+  .mode-button {
+    padding: 0 4px;
+    font-size: 12px;
   }
 
   .menu-panel {

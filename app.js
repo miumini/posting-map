@@ -1,8 +1,9 @@
 const DB_NAME = "posting-map-db";
 const DB_VERSION = 1;
 const STORE = "state";
-const APP_VERSION = "v46";
+const APP_VERSION = "v50";
 const CUSTOM_DELIVERY_COUNT_VALUE = "__custom";
+const MANUAL_BUILDING_SIZE_METERS = 10;
 const STATUS_LABELS = {
   done: "配布済",
   nonresidential: "非住居",
@@ -31,6 +32,10 @@ let currentLocationMarker = null;
 let locationWatchId = null;
 let silentLocationFailure = false;
 let centerOnNextLocation = false;
+let followLocationMode = false;
+let headingMode = false;
+let currentHeading = null;
+let manualBuildingMode = false;
 let lastUiInteractionAt = 0;
 let panelDrag = null;
 
@@ -38,7 +43,10 @@ const els = {
   addressInput: document.getElementById("addressInput"),
   searchForm: document.getElementById("searchForm"),
   suggestionPanel: document.getElementById("suggestionPanel"),
+  addBuildingButton: document.getElementById("addBuildingButton"),
   locateButton: document.getElementById("locateButton"),
+  followButton: document.getElementById("followButton"),
+  headingButton: document.getElementById("headingButton"),
   clearAreaButton: document.getElementById("clearAreaButton"),
   drawButton: document.getElementById("drawButton"),
   areaTotal: document.getElementById("areaTotal"),
@@ -66,6 +74,7 @@ const els = {
   deleteBuildingButton: document.getElementById("deleteBuildingButton"),
   savedCount: document.getElementById("savedCount"),
   deleteRecordButton: document.getElementById("deleteRecordButton"),
+  deleteManualBuildingButton: document.getElementById("deleteManualBuildingButton"),
   exportButton: document.getElementById("exportButton"),
   backupInput: document.getElementById("backupInput"),
   deleteAreaRecordsButton: document.getElementById("deleteAreaRecordsButton"),
@@ -153,6 +162,7 @@ function setupMap() {
 
   map.on("load", () => {
     addAppLayers();
+    updateManualBuildingLayer();
     updateStatusLayer();
     updateSelectedBuildingLayer();
     updateAreaLayers();
@@ -175,6 +185,7 @@ function addAppLayers() {
   map.addSource("status-buildings", emptyGeoJsonSource());
   map.addSource("count-labels", emptyGeoJsonSource());
   map.addSource("selected-building", emptyGeoJsonSource());
+  map.addSource("manual-buildings", emptyGeoJsonSource());
 
   map.addLayer({
     id: "status-building-fill",
@@ -194,6 +205,46 @@ function addAppLayers() {
       "line-color": "#ffffff",
       "line-width": 1.4,
       "line-opacity": 0.9,
+    },
+  });
+
+  map.addLayer({
+    id: "manual-building-fill",
+    type: "fill",
+    source: "manual-buildings",
+    paint: {
+      "fill-color": "#f59e0b",
+      "fill-opacity": ["case", ["boolean", ["get", "hasStatus"], false], 0, 0.18],
+    },
+  });
+
+  map.addLayer({
+    id: "manual-building-line",
+    type: "line",
+    source: "manual-buildings",
+    paint: {
+      "line-color": "#b45309",
+      "line-width": 2,
+      "line-dasharray": [1.2, 0.8],
+      "line-opacity": 0.95,
+    },
+  });
+
+  map.addLayer({
+    id: "manual-building-symbol",
+    type: "symbol",
+    source: "manual-buildings",
+    layout: {
+      "text-field": "⌂",
+      "text-font": ["Noto Sans Regular"],
+      "text-size": 30,
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
+    paint: {
+      "text-color": "#b45309",
+      "text-halo-color": "#ffffff",
+      "text-halo-width": 2,
     },
   });
 
@@ -289,7 +340,10 @@ function bindUi() {
   bindUiEventGuards();
   populateDeliveryCountOptions();
   els.searchForm.addEventListener("submit", searchAddress);
+  els.addBuildingButton.addEventListener("click", toggleManualBuildingMode);
   els.locateButton.addEventListener("click", locateUser);
+  els.followButton.addEventListener("click", toggleFollowLocationMode);
+  els.headingButton.addEventListener("click", toggleHeadingMode);
   els.clearAreaButton.addEventListener("click", requestClearArea);
   els.drawButton.addEventListener("click", startDrawing);
   els.menuButton.addEventListener("click", toggleMenu);
@@ -304,6 +358,7 @@ function bindUi() {
   els.saveMemoButton.addEventListener("click", saveMemo);
   els.deleteBuildingButton.addEventListener("click", requestDeleteSelectedBuilding);
   if (els.deleteRecordButton) els.deleteRecordButton.addEventListener("click", requestDeleteSelectedBuilding);
+  if (els.deleteManualBuildingButton) els.deleteManualBuildingButton.addEventListener("click", requestDeleteManualBuilding);
   els.confirmDeleteButton.addEventListener("click", deleteSelectedBuilding);
   els.confirmClearAreaButton.addEventListener("click", clearArea);
   els.exportButton.addEventListener("click", exportBackup);
@@ -320,7 +375,7 @@ function bindUi() {
   });
 
   document.addEventListener("click", (event) => {
-    if (!els.menuPanel.classList.contains("hidden") && !event.target.closest(".tool-row") && !event.target.closest(".menu-panel")) {
+    if (!els.menuPanel.classList.contains("hidden") && !event.target.closest(".tool-row") && !event.target.closest(".location-row") && !event.target.closest(".menu-panel")) {
       els.menuPanel.classList.add("hidden");
     }
   });
@@ -328,6 +383,7 @@ function bindUi() {
 
 function toggleMenu() {
   if (selectedBuildingId || selectedBuilding) clearSelection();
+  setManualBuildingMode(false);
   els.menuPanel.classList.toggle("hidden");
 }
 
@@ -421,6 +477,10 @@ function wireMapGestures() {
     if (recentlyTouchedUi()) return;
     if (drawing) {
       addDraftPoint([event.lngLat.lng, event.lngLat.lat]);
+      return;
+    }
+    if (manualBuildingMode) {
+      addManualBuildingAt([event.lngLat.lng, event.lngLat.lat]);
       return;
     }
     selectBuildingAt(event.point);
@@ -793,10 +853,14 @@ function startLocationWatch(showErrors) {
     () => {
       locationWatchId = null;
       centerOnNextLocation = false;
+      followLocationMode = false;
+      headingMode = false;
       if (currentLocationMarker) {
         currentLocationMarker.remove();
         currentLocationMarker = null;
       }
+      setFollowButtonActive(false);
+      setHeadingButtonActive(false);
       setLocationButtonActive(false);
       if (showErrors || !silentLocationFailure) showToast("現在地表示には位置情報を許可してください");
       silentLocationFailure = true;
@@ -810,6 +874,8 @@ function updateCurrentLocation(position) {
   setLocationButtonActive(true);
   silentLocationFailure = false;
   const lngLat = [position.coords.longitude, position.coords.latitude];
+  const gpsHeading = Number(position.coords.heading);
+  if (Number.isFinite(gpsHeading)) currentHeading = gpsHeading;
   if (!currentLocationMarker) {
     const el = document.createElement("div");
     el.className = "current-location-marker";
@@ -819,11 +885,12 @@ function updateCurrentLocation(position) {
   } else {
     currentLocationMarker.setLngLat(lngLat);
   }
+  updateLocationMarkerHeading();
 
-  if (centerOnNextLocation) {
+  if (centerOnNextLocation || followLocationMode) {
     centerOnNextLocation = false;
-    map.flyTo({ center: lngLat, zoom: Math.max(map.getZoom(), 17), essential: true });
-    showToast("現在地へ移動しました");
+    map.easeTo({ center: lngLat, zoom: Math.max(map.getZoom(), 17), duration: followLocationMode ? 350 : 700, essential: true });
+    if (!followLocationMode) showToast("現在地へ移動しました");
   }
 }
 
@@ -835,6 +902,12 @@ function stopLocationWatch() {
     currentLocationMarker.remove();
     currentLocationMarker = null;
   }
+  followLocationMode = false;
+  headingMode = false;
+  window.removeEventListener("deviceorientationabsolute", handleDeviceOrientation, true);
+  window.removeEventListener("deviceorientation", handleDeviceOrientation, true);
+  setFollowButtonActive(false);
+  setHeadingButtonActive(false);
   setLocationButtonActive(false);
   showToast("現在地表示をOFFにしました");
 }
@@ -844,8 +917,147 @@ function setLocationButtonActive(active) {
   els.locateButton.setAttribute("aria-pressed", String(active));
 }
 
+function toggleFollowLocationMode() {
+  followLocationMode = !followLocationMode;
+  setFollowButtonActive(followLocationMode);
+  if (followLocationMode) {
+    if (locationWatchId === null) {
+      centerOnNextLocation = true;
+      startLocationWatch(true);
+    } else if (currentLocationMarker) {
+      const lngLat = currentLocationMarker.getLngLat();
+      map.easeTo({ center: [lngLat.lng, lngLat.lat], zoom: Math.max(map.getZoom(), 17), duration: 500, essential: true });
+    }
+    showToast("現在地追従をONにしました");
+  } else {
+    showToast("現在地追従をOFFにしました");
+  }
+}
+
+function setFollowButtonActive(active) {
+  els.followButton.classList.toggle("active", active);
+  els.followButton.setAttribute("aria-pressed", String(active));
+}
+
+async function toggleHeadingMode() {
+  headingMode = !headingMode;
+  setHeadingButtonActive(headingMode);
+  updateLocationMarkerHeading();
+  if (headingMode) {
+    if (locationWatchId === null) startLocationWatch(true);
+    await requestDeviceHeadingPermission();
+    if (!headingMode) return;
+    window.addEventListener("deviceorientationabsolute", handleDeviceOrientation, true);
+    window.addEventListener("deviceorientation", handleDeviceOrientation, true);
+    showToast("進行方向表示をONにしました");
+  } else {
+    window.removeEventListener("deviceorientationabsolute", handleDeviceOrientation, true);
+    window.removeEventListener("deviceorientation", handleDeviceOrientation, true);
+    showToast("進行方向表示をOFFにしました");
+  }
+}
+
+function setHeadingButtonActive(active) {
+  els.headingButton.classList.toggle("active", active);
+  els.headingButton.setAttribute("aria-pressed", String(active));
+}
+
+async function requestDeviceHeadingPermission() {
+  if (typeof DeviceOrientationEvent === "undefined") return;
+  if (typeof DeviceOrientationEvent.requestPermission !== "function") return;
+  try {
+    const result = await DeviceOrientationEvent.requestPermission();
+    if (result !== "granted") {
+      headingMode = false;
+      setHeadingButtonActive(false);
+      showToast("進行方向の取得が許可されませんでした");
+    }
+  } catch {
+    headingMode = false;
+    setHeadingButtonActive(false);
+    showToast("進行方向の取得が許可されませんでした");
+  }
+}
+
+function handleDeviceOrientation(event) {
+  let heading = null;
+  if (typeof event.webkitCompassHeading === "number") {
+    heading = event.webkitCompassHeading;
+  } else if (typeof event.alpha === "number") {
+    heading = 360 - event.alpha;
+  }
+  if (!Number.isFinite(heading)) return;
+  currentHeading = ((heading % 360) + 360) % 360;
+  updateLocationMarkerHeading();
+}
+
+function updateLocationMarkerHeading() {
+  if (!currentLocationMarker) return;
+  const element = currentLocationMarker.getElement();
+  const hasHeading = headingMode && Number.isFinite(currentHeading);
+  element.classList.toggle("no-heading", !hasHeading);
+  if (hasHeading) element.style.setProperty("--location-heading", `${currentHeading - 90}deg`);
+}
+
+function toggleManualBuildingMode() {
+  setManualBuildingMode(!manualBuildingMode);
+  if (manualBuildingMode) {
+    if (drawing) cancelDrawing();
+    clearSelection();
+    showToast("追加したい建物の場所を地図でタップしてください");
+  } else {
+    showToast("建物追加をOFFにしました");
+  }
+}
+
+function setManualBuildingMode(active) {
+  manualBuildingMode = active;
+  els.addBuildingButton.classList.toggle("active", active);
+  els.addBuildingButton.setAttribute("aria-pressed", String(active));
+}
+
+function addManualBuildingAt(center) {
+  const geometry = manualBuildingGeometry(center);
+  const id = `manual-${Date.now().toString(36)}`;
+  const now = new Date().toISOString();
+  records[id] = {
+    id,
+    status: "",
+    memo: "",
+    deliveryCount: "",
+    geometry,
+    manual: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+  selectedBuildingId = id;
+  selectedBuilding = { id, geometry };
+  setManualBuildingMode(false);
+  updateManualBuildingLayer();
+  updateSelectedBuildingLayer();
+  refreshSelectionLabel();
+  expandStatusPanel();
+  persist();
+  showToast("手動建物を追加しました");
+}
+
+function manualBuildingGeometry(center) {
+  const [lng, lat] = center;
+  const half = MANUAL_BUILDING_SIZE_METERS / 2;
+  const latDelta = half / 110540;
+  const lngDelta = half / (111320 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
+  const ring = [
+    [lng - lngDelta, lat - latDelta],
+    [lng + lngDelta, lat - latDelta],
+    [lng + lngDelta, lat + latDelta],
+    [lng - lngDelta, lat + latDelta],
+    [lng - lngDelta, lat - latDelta],
+  ];
+  return { type: "Polygon", coordinates: [ring] };
+}
+
 function selectBuildingAt(point, fromLongPress = false) {
-  const features = map.queryRenderedFeatures(point, { layers: ["building-base", "status-building-fill"] });
+  const features = map.queryRenderedFeatures(point, { layers: ["manual-building-fill", "manual-building-line", "building-base", "status-building-fill"] });
   const feature = features.find((item) => item.geometry && ["Polygon", "MultiPolygon"].includes(item.geometry.type));
   if (!feature) {
     if (selectedBuildingId || selectedBuilding) {
@@ -919,6 +1131,13 @@ function isEmptyDeliveryCount(value) {
   return !Number.isFinite(count) || count <= 0;
 }
 
+function applyDoneStatusForDeliveryCount(record) {
+  const count = Number(record?.deliveryCount);
+  if (record && !record.status && Number.isFinite(count) && count > 0) {
+    record.status = "done";
+  }
+}
+
 function saveDeliveryCount() {
   if (!selectedBuilding) {
     els.deliveryCountInput.value = "";
@@ -933,6 +1152,7 @@ function saveDeliveryCount() {
   if (value === "" && !selectedRecord()) return;
   const record = ensureSelectedRecord();
   record.deliveryCount = value === "" ? "" : String(Math.max(0, Math.floor(Number(value) || 0)));
+  applyDoneStatusForDeliveryCount(record);
   ensureDeliveryCountOption(record.deliveryCount);
   if (record.deliveryCount !== value) els.deliveryCountInput.value = record.deliveryCount;
   record.updatedAt = new Date().toISOString();
@@ -961,6 +1181,7 @@ function saveCustomDeliveryCount() {
   if (value === "" && !selectedRecord()) return;
   const record = ensureSelectedRecord();
   record.deliveryCount = value === "" ? "" : String(Math.max(0, Math.floor(Number(value) || 0)));
+  applyDoneStatusForDeliveryCount(record);
   ensureDeliveryCountOption(record.deliveryCount);
   record.updatedAt = new Date().toISOString();
   pruneSelectedRecordIfEmpty();
@@ -1043,6 +1264,28 @@ function deleteSelectedBuilding() {
   if (els.memoDialog.open) els.memoDialog.close();
   if (els.confirmDeleteDialog.open) els.confirmDeleteDialog.close();
   showToast("この建物の記録を削除しました");
+}
+
+function requestDeleteManualBuilding() {
+  const record = selectedRecord();
+  if (!record?.manual) {
+    showToast("手動追加した建物を選択してください");
+    return;
+  }
+  if (confirm("追加した建物を削除しますか？\n記録、メモ、枚数も消えます。")) {
+    deleteManualBuilding();
+  }
+}
+
+function deleteManualBuilding() {
+  const record = selectedRecord();
+  if (!selectedBuildingId || !record?.manual) return;
+  delete records[selectedBuildingId];
+  updateManualBuildingLayer();
+  updateStatusLayer();
+  clearSelection();
+  persist();
+  showToast("追加した建物を削除しました");
 }
 
 function requestClearArea() {
@@ -1133,12 +1376,14 @@ function initializeApp() {
     return;
   }
   Object.values(records).forEach((record) => clearRecordFields(record, fields));
+  if (fields.includes("manualBuildings")) deleteManualBuildings();
   pruneEmptyRecords();
   if (fields.includes("area")) activeArea = null;
   if (selectedBuildingId && !records[selectedBuildingId]) {
     clearSelection();
   }
   updateStatusLayer();
+  updateManualBuildingLayer();
   updateSelectedBuildingLayer();
   updateAreaLayers();
   refreshSelectionLabel();
@@ -1207,6 +1452,12 @@ function clearRecordFields(record, fields, options = {}) {
   record.updatedAt = new Date().toISOString();
 }
 
+function deleteManualBuildings() {
+  Object.keys(records).forEach((id) => {
+    if (records[id]?.manual) delete records[id];
+  });
+}
+
 function normalizeRemovedStatuses() {
   let changed = false;
   Object.values(records).forEach((record) => {
@@ -1223,11 +1474,13 @@ function normalizeRemovedStatuses() {
 function pruneEmptyRecords() {
   Object.keys(records).forEach((id) => {
     const record = records[id];
+    if (record.manual) return;
     if (!record.status && !record.memo && !record.deliveryCount) delete records[id];
   });
 }
 
 function startDrawing() {
+  setManualBuildingMode(false);
   drawing = true;
   draftPoints = [];
   els.drawPanel.classList.remove("hidden");
@@ -1356,8 +1609,22 @@ function updateStatusLayer() {
     geometry: record.geometry,
   }));
   map.getSource("status-buildings").setData({ type: "FeatureCollection", features });
+  updateManualBuildingLayer();
   updateCountLabels();
   updateSavedCount();
+}
+
+function updateManualBuildingLayer() {
+  if (!map || !map.getSource("manual-buildings")) return;
+  const features = Object.values(records).filter((record) => record.manual && record.geometry).map((record) => ({
+    type: "Feature",
+    properties: {
+      id: record.id,
+      hasStatus: Boolean(record.status),
+    },
+    geometry: record.geometry,
+  }));
+  map.getSource("manual-buildings").setData({ type: "FeatureCollection", features });
 }
 
 function updateCountLabels() {
@@ -1401,6 +1668,7 @@ function clearSelection() {
 function refreshSelectionLabel() {
   const record = selectedRecord();
   els.selectedLabel.textContent = record ? STATUS_LABELS[record.status] : "";
+  if (els.deleteManualBuildingButton) els.deleteManualBuildingButton.classList.toggle("hidden", !record?.manual);
   ensureDeliveryCountOption(record?.deliveryCount || "");
   els.deliveryCountCustomInput.classList.add("hidden");
   els.deliveryCountInput.classList.remove("hidden");
