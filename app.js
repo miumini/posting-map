@@ -1,7 +1,7 @@
 const DB_NAME = "posting-map-db";
 const DB_VERSION = 1;
 const STORE = "state";
-const APP_VERSION = "v50";
+const APP_VERSION = "v51";
 const CUSTOM_DELIVERY_COUNT_VALUE = "__custom";
 const MANUAL_BUILDING_SIZE_METERS = 10;
 const STATUS_LABELS = {
@@ -37,6 +37,7 @@ let headingMode = false;
 let currentHeading = null;
 let manualBuildingMode = false;
 let lastUiInteractionAt = 0;
+let lastHeadingCameraUpdateAt = 0;
 let panelDrag = null;
 
 const els = {
@@ -176,6 +177,9 @@ function setupMap() {
     localStorage.setItem("posting-map-center", JSON.stringify([center.lng, center.lat]));
     localStorage.setItem("posting-map-zoom", String(map.getZoom()));
   });
+
+  map.on("rotate", updateLocationMarkerHeading);
+  map.on("rotateend", updateLocationMarkerHeading);
 }
 
 function addAppLayers() {
@@ -235,9 +239,9 @@ function addAppLayers() {
     type: "symbol",
     source: "manual-buildings",
     layout: {
-      "text-field": "⌂",
+      "text-field": "",
       "text-font": ["Noto Sans Regular"],
-      "text-size": 30,
+      "text-size": 0,
       "text-allow-overlap": true,
       "text-ignore-placement": true,
     },
@@ -889,7 +893,7 @@ function updateCurrentLocation(position) {
 
   if (centerOnNextLocation || followLocationMode) {
     centerOnNextLocation = false;
-    map.easeTo({ center: lngLat, zoom: Math.max(map.getZoom(), 17), duration: followLocationMode ? 350 : 700, essential: true });
+    moveMapToCurrentLocation(lngLat, followLocationMode ? 350 : 700);
     if (!followLocationMode) showToast("現在地へ移動しました");
   }
 }
@@ -926,7 +930,7 @@ function toggleFollowLocationMode() {
       startLocationWatch(true);
     } else if (currentLocationMarker) {
       const lngLat = currentLocationMarker.getLngLat();
-      map.easeTo({ center: [lngLat.lng, lngLat.lat], zoom: Math.max(map.getZoom(), 17), duration: 500, essential: true });
+      moveMapToCurrentLocation([lngLat.lng, lngLat.lat], 500);
     }
     showToast("現在地追従をONにしました");
   } else {
@@ -989,6 +993,7 @@ function handleDeviceOrientation(event) {
   if (!Number.isFinite(heading)) return;
   currentHeading = ((heading % 360) + 360) % 360;
   updateLocationMarkerHeading();
+  updateFollowBearingFromHeading();
 }
 
 function updateLocationMarkerHeading() {
@@ -996,7 +1001,39 @@ function updateLocationMarkerHeading() {
   const element = currentLocationMarker.getElement();
   const hasHeading = headingMode && Number.isFinite(currentHeading);
   element.classList.toggle("no-heading", !hasHeading);
-  if (hasHeading) element.style.setProperty("--location-heading", `${currentHeading - 90}deg`);
+  if (hasHeading) element.style.setProperty("--location-heading", `${currentHeading - map.getBearing() - 90}deg`);
+}
+
+function moveMapToCurrentLocation(lngLat, duration) {
+  const camera = {
+    center: lngLat,
+    zoom: Math.max(map.getZoom(), 17),
+    duration,
+    essential: true,
+  };
+  if (followLocationMode) camera.offset = followLocationOffset();
+  if (followLocationMode && headingMode && Number.isFinite(currentHeading)) camera.bearing = currentHeading;
+  map.easeTo(camera);
+}
+
+function followLocationOffset() {
+  return [0, Math.min(180, Math.max(90, window.innerHeight * 0.22))];
+}
+
+function updateFollowBearingFromHeading() {
+  if (!followLocationMode || !headingMode || !currentLocationMarker || !Number.isFinite(currentHeading)) return;
+  const now = Date.now();
+  if (now - lastHeadingCameraUpdateAt < 250) return;
+  lastHeadingCameraUpdateAt = now;
+  const lngLat = currentLocationMarker.getLngLat();
+  map.easeTo({
+    center: [lngLat.lng, lngLat.lat],
+    offset: followLocationOffset(),
+    bearing: currentHeading,
+    zoom: Math.max(map.getZoom(), 17),
+    duration: 250,
+    essential: true,
+  });
 }
 
 function toggleManualBuildingMode() {
