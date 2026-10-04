@@ -1,7 +1,11 @@
 const DB_NAME = "posting-map-db";
 const DB_VERSION = 1;
 const STORE = "state";
-const APP_VERSION = "v51";
+const APP_VERSION = "v55";
+const ROUTE_API_SETTINGS_KEY = "route-api-settings";
+const HEADING_SMOOTHING_MS = 800;
+const HEADING_CAMERA_THRESHOLD = 12;
+const HEADING_CAMERA_INTERVAL_MS = 700;
 const CUSTOM_DELIVERY_COUNT_VALUE = "__custom";
 const MANUAL_BUILDING_SIZE_METERS = 10;
 const STATUS_LABELS = {
@@ -35,10 +39,16 @@ let centerOnNextLocation = false;
 let followLocationMode = false;
 let headingMode = false;
 let currentHeading = null;
+let lastHeadingSampleAt = 0;
+let lastCompassHeadingAt = 0;
+let followCameraBearing = null;
 let manualBuildingMode = false;
 let lastUiInteractionAt = 0;
 let lastHeadingCameraUpdateAt = 0;
 let panelDrag = null;
+let routeApiSettingsBusy = false;
+let routeApiKeySaved = false;
+let routePlanner = null;
 
 const els = {
   addressInput: document.getElementById("addressInput"),
@@ -81,6 +91,15 @@ const els = {
   deleteAreaRecordsButton: document.getElementById("deleteAreaRecordsButton"),
   initializeButton: document.getElementById("initializeButton"),
   versionCheckButton: document.getElementById("versionCheckButton"),
+  routeApiSettingsButton: document.getElementById("routeApiSettingsButton"),
+  routeApiDialog: document.getElementById("routeApiDialog"),
+  routeApiForm: document.getElementById("routeApiForm"),
+  routeApiKeyInput: document.getElementById("routeApiKeyInput"),
+  routeApiShowKey: document.getElementById("routeApiShowKey"),
+  routeApiStatus: document.getElementById("routeApiStatus"),
+  routeApiSaveButton: document.getElementById("routeApiSaveButton"),
+  routeApiDeleteButton: document.getElementById("routeApiDeleteButton"),
+  routeApiCloseButton: document.getElementById("routeApiCloseButton"),
   confirmDeleteAreaRecordsDialog: document.getElementById("confirmDeleteAreaRecordsDialog"),
   confirmDeleteAreaRecordsButton: document.getElementById("confirmDeleteAreaRecordsButton"),
   confirmInitializeDialog: document.getElementById("confirmInitializeDialog"),
@@ -99,10 +118,23 @@ async function init() {
   activeArea = saved.activeArea || null;
   if (normalizeRemovedStatuses()) persist();
   setupMap();
+  routePlanner = new PostingRoutePlanner({
+    map, db, store: STORE,
+    getArea: () => activeArea,
+    getRecords: () => records,
+    loadApiKey: loadRouteApiKey,
+    hash: hashGeometry,
+    flatten: flattenCoordinates,
+    contains: pointInFeature,
+    fit: fitFeature,
+    toast: showToast,
+    enableLocation: () => { if (locationWatchId === null) startLocationWatch(true); },
+  });
   bindUi();
   collapseStatusPanel();
   refreshSelectionLabel();
   registerServiceWorker();
+  await routePlanner.initialize();
 }
 
 function setupMap() {
@@ -163,6 +195,7 @@ function setupMap() {
 
   map.on("load", () => {
     addAppLayers();
+    routePlanner?.onMapLoad();
     updateManualBuildingLayer();
     updateStatusLayer();
     updateSelectedBuildingLayer();
@@ -370,6 +403,18 @@ function bindUi() {
   els.deleteAreaRecordsButton.addEventListener("click", requestDeleteAreaRecords);
   els.initializeButton.addEventListener("click", requestInitializeApp);
   els.versionCheckButton.addEventListener("click", checkForUpdate);
+  els.routeApiSettingsButton.addEventListener("click", openRouteApiSettings);
+  els.routeApiForm.addEventListener("submit", saveRouteApiSettings);
+  els.routeApiDeleteButton.addEventListener("click", deleteRouteApiSettings);
+  els.routeApiCloseButton.addEventListener("click", () => els.routeApiDialog.close());
+  els.routeApiKeyInput.addEventListener("input", refreshRouteApiControls);
+  els.routeApiShowKey.addEventListener("change", () => {
+    els.routeApiKeyInput.type = els.routeApiShowKey.checked ? "text" : "password";
+  });
+  els.routeApiDialog.addEventListener("cancel", (event) => {
+    if (routeApiSettingsBusy) event.preventDefault();
+  });
+  els.routeApiDialog.addEventListener("close", resetRouteApiInput);
   els.confirmDeleteAreaRecordsButton.addEventListener("click", deleteAreaRecords);
   els.confirmInitializeButton.addEventListener("click", initializeApp);
   if (els.clearSelectionButton) els.clearSelectionButton.addEventListener("click", clearSelection);
@@ -389,6 +434,85 @@ function toggleMenu() {
   if (selectedBuildingId || selectedBuilding) clearSelection();
   setManualBuildingMode(false);
   els.menuPanel.classList.toggle("hidden");
+}
+
+async function openRouteApiSettings() {
+  els.menuPanel.classList.add("hidden");
+  resetRouteApiInput();
+  routeApiKeySaved = false;
+  routeApiSettingsBusy = true;
+  els.routeApiStatus.textContent = "設定を読み込み中";
+  refreshRouteApiControls();
+  els.routeApiDialog.showModal();
+  try {
+    routeApiKeySaved = Boolean(await loadRouteApiKey());
+    els.routeApiStatus.textContent = routeApiKeySaved ? "保存済み（接続未確認）" : "未設定";
+    els.routeApiKeyInput.placeholder = routeApiKeySaved ? "変更する場合は新しいキーを貼り付け" : "取得したキーを貼り付け";
+  } catch {
+    els.routeApiStatus.textContent = "設定を読み込めませんでした。閉じて再度お試しください。";
+  } finally {
+    routeApiSettingsBusy = false;
+    refreshRouteApiControls();
+  }
+}
+
+function resetRouteApiInput() {
+  els.routeApiKeyInput.value = "";
+  els.routeApiKeyInput.type = "password";
+  els.routeApiShowKey.checked = false;
+}
+
+function refreshRouteApiControls() {
+  els.routeApiSaveButton.disabled = routeApiSettingsBusy || !els.routeApiKeyInput.value.trim();
+  els.routeApiDeleteButton.disabled = routeApiSettingsBusy || !routeApiKeySaved;
+  els.routeApiCloseButton.disabled = routeApiSettingsBusy;
+  els.routeApiKeyInput.disabled = routeApiSettingsBusy;
+  els.routeApiShowKey.disabled = routeApiSettingsBusy;
+}
+
+async function saveRouteApiSettings(event) {
+  event.preventDefault();
+  if (routeApiSettingsBusy) return;
+  const key = els.routeApiKeyInput.value.trim();
+  if (!key || !/^[\x21-\x7e]+$/.test(key) || key.length > 4096) {
+    els.routeApiStatus.textContent = "取得したAPIキーを、改行や途中の空白を含めずに貼り付けてください。";
+    return;
+  }
+  routeApiSettingsBusy = true;
+  refreshRouteApiControls();
+  try {
+    await writeRouteApiKey(key);
+    routeApiKeySaved = true;
+    resetRouteApiInput();
+    els.routeApiKeyInput.placeholder = "変更する場合は新しいキーを貼り付け";
+    els.routeApiStatus.textContent = "保存済み（接続未確認）";
+    showToast("APIキーをこの端末に保存しました");
+  } catch {
+    els.routeApiStatus.textContent = "保存に失敗しました。もう一度お試しください。";
+  } finally {
+    routeApiSettingsBusy = false;
+    refreshRouteApiControls();
+  }
+}
+
+async function deleteRouteApiSettings() {
+  if (routeApiSettingsBusy || !routeApiKeySaved) return;
+  if (!confirm("この端末に保存したAPIキーを削除しますか？")) return;
+  routeApiSettingsBusy = true;
+  refreshRouteApiControls();
+  try {
+    await writeRouteApiKey(null);
+    routeApiKeySaved = false;
+    resetRouteApiInput();
+    els.routeApiKeyInput.placeholder = "取得したキーを貼り付け";
+    els.routeApiStatus.textContent = "未設定";
+    showToast("APIキーを削除しました");
+  } catch {
+    els.routeApiStatus.textContent = "削除に失敗しました。もう一度お試しください。";
+  } finally {
+    routeApiSettingsBusy = false;
+    refreshRouteApiControls();
+  }
 }
 
 function startPanelResize(event) {
@@ -589,7 +713,10 @@ function showBoundarySuggestions(suggestions) {
   title.textContent = "選べる範囲";
   els.suggestionPanel.appendChild(title);
 
-  suggestions.forEach((suggestion) => {
+  const combined = suggestions.filter((suggestion) => suggestion.combined);
+  const individual = suggestions.filter((suggestion) => !suggestion.combined);
+  const quickChoices = individual.length > 1 ? combined : suggestions;
+  quickChoices.forEach((suggestion) => {
     const button = document.createElement("button");
     button.className = "suggestion-button";
     button.type = "button";
@@ -598,7 +725,73 @@ function showBoundarySuggestions(suggestions) {
     els.suggestionPanel.appendChild(button);
   });
 
+  if (individual.length > 1) {
+    const selected = new Set();
+    const selectAllLabel = document.createElement("label");
+    selectAllLabel.className = "suggestion-check-row";
+    const selectAll = document.createElement("input");
+    selectAll.type = "checkbox";
+    selectAllLabel.append(selectAll, document.createTextNode("すべて選択"));
+    els.suggestionPanel.appendChild(selectAllLabel);
+
+    const list = document.createElement("div");
+    list.className = "suggestion-choice-list";
+    const checkboxes = individual.map((suggestion, index) => {
+      const label = document.createElement("label");
+      label.className = "suggestion-check-row";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      label.append(checkbox, document.createTextNode(suggestion.name));
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) selected.add(index);
+        else selected.delete(index);
+        refreshChoices();
+      });
+      list.appendChild(label);
+      return checkbox;
+    });
+    els.suggestionPanel.appendChild(list);
+
+    const applyButton = document.createElement("button");
+    applyButton.type = "button";
+    applyButton.className = "suggestion-apply-button";
+    const refreshChoices = () => {
+      applyButton.disabled = selected.size === 0;
+      applyButton.textContent = `選択した範囲に決定（${selected.size}件）`;
+      selectAll.checked = selected.size === individual.length;
+      selectAll.indeterminate = selected.size > 0 && selected.size < individual.length;
+    };
+    selectAll.addEventListener("change", () => {
+      checkboxes.forEach((checkbox, index) => {
+        checkbox.checked = selectAll.checked;
+        if (selectAll.checked) selected.add(index);
+        else selected.delete(index);
+      });
+      refreshChoices();
+    });
+    applyButton.addEventListener("click", () => {
+      const suggestion = combineBoundaryChoices(individual.filter((_, index) => selected.has(index)));
+      if (suggestion) useBoundarySuggestion(suggestion);
+    });
+    refreshChoices();
+    els.suggestionPanel.appendChild(applyButton);
+  }
+
   els.suggestionPanel.classList.remove("hidden");
+}
+
+function combineBoundaryChoices(choices) {
+  if (choices.length === 0) return null;
+  if (choices.length === 1) return choices[0];
+  const name = choices.map((choice) => choice.name).join("・");
+  return {
+    name,
+    feature: areaFeatureFromFeatures(choices.map((choice) => choice.feature), name, {
+      source: "Geoshape selected towns",
+      cityCode: choices[0].feature.properties.cityCode,
+      keyCodes: Array.from(new Set(choices.flatMap((choice) => choice.feature.properties.keyCodes || []))),
+    }),
+  };
 }
 
 function hideSuggestions() {
@@ -735,6 +928,7 @@ async function findBoundarySuggestionsByAddress(query) {
       const name = `${city.name}${group.rawTownName}（${group.features.length}範囲をまとめる）`;
       return {
         name,
+        combined: true,
         feature: areaFeatureFromFeatures(group.features, name, {
           source: "Geoshape town combined suggestion",
           cityCode: city.code,
@@ -855,6 +1049,7 @@ function startLocationWatch(showErrors) {
   locationWatchId = navigator.geolocation.watchPosition(
     updateCurrentLocation,
     () => {
+      routePlanner?.setRecording(false);
       locationWatchId = null;
       centerOnNextLocation = false;
       followLocationMode = false;
@@ -878,8 +1073,11 @@ function updateCurrentLocation(position) {
   setLocationButtonActive(true);
   silentLocationFailure = false;
   const lngLat = [position.coords.longitude, position.coords.latitude];
-  const gpsHeading = Number(position.coords.heading);
-  if (Number.isFinite(gpsHeading)) currentHeading = gpsHeading;
+  const gpsHeading = position.coords.heading;
+  if (Number.isFinite(gpsHeading) && position.coords.speed >= 1 &&
+      Date.now() - lastCompassHeadingAt > 5000) {
+    updateSmoothedHeading(gpsHeading);
+  }
   if (!currentLocationMarker) {
     const el = document.createElement("div");
     el.className = "current-location-marker";
@@ -890,6 +1088,7 @@ function updateCurrentLocation(position) {
     currentLocationMarker.setLngLat(lngLat);
   }
   updateLocationMarkerHeading();
+  routePlanner?.onPosition(position);
 
   if (centerOnNextLocation || followLocationMode) {
     centerOnNextLocation = false;
@@ -899,6 +1098,7 @@ function updateCurrentLocation(position) {
 }
 
 function stopLocationWatch() {
+  routePlanner?.setRecording(false);
   if (locationWatchId !== null) navigator.geolocation.clearWatch(locationWatchId);
   locationWatchId = null;
   centerOnNextLocation = false;
@@ -908,6 +1108,10 @@ function stopLocationWatch() {
   }
   followLocationMode = false;
   headingMode = false;
+  currentHeading = null;
+  lastHeadingSampleAt = 0;
+  lastCompassHeadingAt = 0;
+  followCameraBearing = null;
   window.removeEventListener("deviceorientationabsolute", handleDeviceOrientation, true);
   window.removeEventListener("deviceorientation", handleDeviceOrientation, true);
   setFollowButtonActive(false);
@@ -923,6 +1127,7 @@ function setLocationButtonActive(active) {
 
 function toggleFollowLocationMode() {
   followLocationMode = !followLocationMode;
+  followCameraBearing = null;
   setFollowButtonActive(followLocationMode);
   if (followLocationMode) {
     if (locationWatchId === null) {
@@ -945,6 +1150,7 @@ function setFollowButtonActive(active) {
 
 async function toggleHeadingMode() {
   headingMode = !headingMode;
+  followCameraBearing = null;
   setHeadingButtonActive(headingMode);
   updateLocationMarkerHeading();
   if (headingMode) {
@@ -984,16 +1190,49 @@ async function requestDeviceHeadingPermission() {
 }
 
 function handleDeviceOrientation(event) {
+  if (!headingMode) return;
   let heading = null;
   if (typeof event.webkitCompassHeading === "number") {
+    if (Number.isFinite(event.webkitCompassAccuracy) &&
+        (event.webkitCompassAccuracy < 0 || event.webkitCompassAccuracy > 30)) return;
     heading = event.webkitCompassHeading;
-  } else if (typeof event.alpha === "number") {
+  } else if (event.absolute === true && typeof event.alpha === "number") {
     heading = 360 - event.alpha;
   }
   if (!Number.isFinite(heading)) return;
-  currentHeading = ((heading % 360) + 360) % 360;
+  lastCompassHeadingAt = Date.now();
+  updateSmoothedHeading(heading);
   updateLocationMarkerHeading();
   updateFollowBearingFromHeading();
+}
+
+function headingDifference(target, source) {
+  return ((target - source + 540) % 360) - 180;
+}
+
+function updateSmoothedHeading(heading) {
+  const normalized = ((heading % 360) + 360) % 360;
+  const now = Date.now();
+  if (!Number.isFinite(currentHeading)) {
+    currentHeading = normalized;
+  } else {
+    // Use the shortest turn, including when the compass crosses north.
+    const elapsed = Math.max(0, now - lastHeadingSampleAt);
+    const weight = 1 - Math.exp(-elapsed / HEADING_SMOOTHING_MS);
+    currentHeading = (currentHeading + headingDifference(normalized, currentHeading) * weight + 360) % 360;
+  }
+  lastHeadingSampleAt = now;
+}
+
+function getFollowCameraBearing() {
+  const now = Date.now();
+  if (!Number.isFinite(followCameraBearing) ||
+      (Math.abs(headingDifference(currentHeading, followCameraBearing)) >= HEADING_CAMERA_THRESHOLD &&
+       now - lastHeadingCameraUpdateAt >= HEADING_CAMERA_INTERVAL_MS)) {
+    followCameraBearing = currentHeading;
+    lastHeadingCameraUpdateAt = now;
+  }
+  return followCameraBearing;
 }
 
 function updateLocationMarkerHeading() {
@@ -1012,26 +1251,26 @@ function moveMapToCurrentLocation(lngLat, duration) {
     essential: true,
   };
   if (followLocationMode) camera.offset = followLocationOffset();
-  if (followLocationMode && headingMode && Number.isFinite(currentHeading)) camera.bearing = currentHeading;
+  if (followLocationMode && headingMode && Number.isFinite(currentHeading)) camera.bearing = getFollowCameraBearing();
   map.easeTo(camera);
 }
 
 function followLocationOffset() {
-  return [0, Math.min(180, Math.max(90, window.innerHeight * 0.22))];
+  return [0, 0];
 }
 
 function updateFollowBearingFromHeading() {
   if (!followLocationMode || !headingMode || !currentLocationMarker || !Number.isFinite(currentHeading)) return;
-  const now = Date.now();
-  if (now - lastHeadingCameraUpdateAt < 250) return;
-  lastHeadingCameraUpdateAt = now;
+  const previousBearing = followCameraBearing;
+  const bearing = getFollowCameraBearing();
+  if (bearing === previousBearing) return;
   const lngLat = currentLocationMarker.getLngLat();
   map.easeTo({
     center: [lngLat.lng, lngLat.lat],
     offset: followLocationOffset(),
-    bearing: currentHeading,
+    bearing,
     zoom: Math.max(map.getZoom(), 17),
-    duration: 250,
+    duration: 500,
     essential: true,
   });
 }
@@ -1604,6 +1843,7 @@ async function importAreaGeoJson(event) {
 }
 
 function updateAreaLayers() {
+  routePlanner?.areaChanged();
   if (!map || !map.getSource("selected-area")) return;
   const featureCollection = activeArea ? { type: "FeatureCollection", features: [activeArea] } : emptyFeatureCollection();
   map.getSource("selected-area").setData(featureCollection);
@@ -2058,6 +2298,28 @@ function saveState(value) {
     tx.objectStore(STORE).put(value, "app");
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
+  });
+}
+
+function loadRouteApiKey() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readonly");
+    const request = tx.objectStore(STORE).get(ROUTE_API_SETTINGS_KEY);
+    tx.oncomplete = () => resolve(typeof request.result?.apiKey === "string" ? request.result.apiKey : "");
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+function writeRouteApiKey(apiKey) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    if (apiKey) store.put({ provider: "openrouteservice", apiKey }, ROUTE_API_SETTINGS_KEY);
+    else store.delete(ROUTE_API_SETTINGS_KEY);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
   });
 }
 

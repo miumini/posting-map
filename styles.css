@@ -143,6 +143,7 @@ button:active,
 .suggestion-panel,
 .tool-row,
 .location-row,
+.route-panel,
 .menu-panel,
 .draw-panel,
 .status-panel,
@@ -213,6 +214,43 @@ button:active,
   font-size: 13px;
 }
 
+.suggestion-choice-list {
+  max-height: 32vh;
+  max-height: 32dvh;
+  overflow-y: auto;
+}
+
+.suggestion-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.suggestion-check-row input {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.suggestion-apply-button {
+  width: 100%;
+  padding: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+}
+
+.suggestion-apply-button:disabled {
+  background: #e5e7eb;
+  color: var(--muted);
+}
+
 .tool-row {
   display: grid;
   grid-template-columns: 92px 72px minmax(0, 1fr) 48px;
@@ -246,6 +284,90 @@ button:active,
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
+  max-height: 65vh;
+  max-height: 65dvh;
+  overflow-y: auto;
+}
+
+.route-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  min-width: 0;
+}
+
+.route-panel.hidden {
+  display: none;
+}
+
+.route-panel.collapsed .route-summary,
+.route-panel.collapsed .route-actions,
+.route-panel.collapsed .route-note,
+.route-panel.collapsed .route-credit {
+  display: none;
+}
+
+.route-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.route-heading select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 16px;
+}
+
+.route-summary {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.route-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.route-actions button {
+  min-width: 0;
+  padding: 6px;
+  font-size: 13px;
+}
+
+.route-actions .hidden {
+  display: none;
+}
+
+.route-panel button:disabled {
+  opacity: 0.5;
+}
+
+.route-note,
+.route-credit {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.route-credit {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.route-credit a {
+  color: inherit;
 }
 
 .menu-panel.hidden {
@@ -692,6 +814,62 @@ textarea {
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
+}
+
+.route-api-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.route-api-links a {
+  color: var(--accent);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.route-api-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.route-api-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 16px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.route-api-show {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.route-api-show input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.route-api-note {
+  font-size: 13px;
+}
+
+#routeApiDialog button:disabled {
+  opacity: 0.5;
 }
 
 .delete-options {

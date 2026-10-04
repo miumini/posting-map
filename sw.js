@@ -1,4 +1,4 @@
-const CACHE_NAME = "posting-map-v51";
+const CACHE_NAME = "posting-map-v55";
 const APP_FILES = [
   "./",
   "./index.html",
@@ -6,6 +6,7 @@ const APP_FILES = [
   "./version.json",
   "./styles.css",
   "./app.js",
+  "./routes.js",
   "./manifest.webmanifest",
   "./icon.svg",
 ];
@@ -29,6 +30,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
+  if (request.cache === "no-store") return;
   event.respondWith(
     caches.match(request).then((cached) => cached || fetch(request).then((response) => {
       if (new URL(request.url).origin === self.location.origin) {
